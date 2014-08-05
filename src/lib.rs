@@ -44,6 +44,10 @@ pub mod signature;
 pub mod alert;
 pub mod handshake;
 
+pub mod x509 {
+    pub mod der;
+}
+
 #[cfg(test)] mod test;
 
 pub static TLS_VERSION: (u8, u8) = (3, 3);
