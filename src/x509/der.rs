@@ -1,5 +1,6 @@
 use std::io;
 
+// TODO just use TlsError?
 #[deriving(Show, PartialEq)]
 pub enum DerError {
     IoError(io::IoError),
