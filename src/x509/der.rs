@@ -43,34 +43,11 @@ pub enum Element {
     UtcTime(Vec<u8>), // 0x17
 
     // constructed
-    Sequence(Vec<SpannedElement>), // 0x10
-    Set(Vec<SpannedElement>), // 0x11
+    Sequence(Vec<Element>), // 0x10
+    Set(Vec<Element>), // 0x11
 
     UnknownPrimitive(u64, TagClass, Vec<u8>), // tag, tag_class, content
-    UnknownConstructed(u64, TagClass, Vec<SpannedElement>), //tag, tag_class, content
-}
-
-#[deriving(Show)]
-pub struct SpannedElement {
-    pub elem: Element,
-    pub start: uint, // inclusive
-    pub end: uint, // exclusive
-}
-
-impl PartialEq for SpannedElement {
-    fn eq(&self, b: &SpannedElement) -> bool {
-        self.elem == b.elem
-    }
-}
-
-impl SpannedElement {
-    fn new(elem: Element, start: uint, end: uint) -> SpannedElement {
-        SpannedElement {
-            elem: elem,
-            start: start,
-            end: end,
-        }
-    }
+    UnknownConstructed(u64, TagClass, Vec<Element>), //tag, tag_class, content
 }
 
 pub struct DerReader<'a, R: 'a> {
@@ -97,9 +74,7 @@ impl<'a, R: Reader> DerReader<'a, R> {
         Ok(content)
     }
 
-    pub fn read_element(&mut self) -> DerResult<SpannedElement> {
-        let start = self.offset;
-
+    pub fn read_element(&mut self) -> DerResult<Element> {
         let (tag_class, is_constructed, tag) = {
             let b0 = iotry!(self.read_u8());
             let class = match b0 >> 6 {
@@ -156,7 +131,7 @@ impl<'a, R: Reader> DerReader<'a, R> {
 
             if tag_class != Universal {
                 let elem = UnknownPrimitive(tag, tag_class, content);
-                return Ok(SpannedElement::new(elem, start, self.offset));
+                return Ok(elem);
             }
 
             let len = content.len();
@@ -300,7 +275,7 @@ impl<'a, R: Reader> DerReader<'a, R> {
 
             if tag_class != Universal {
                 let elem = UnknownConstructed(tag, tag_class, children);
-                return Ok(SpannedElement::new(elem, start, self.offset));
+                return Ok(elem);
             }
 
             match tag {
@@ -314,7 +289,7 @@ impl<'a, R: Reader> DerReader<'a, R> {
             }
         };
 
-        Ok(SpannedElement::new(content, start, self.offset))
+        Ok(content)
     }
 }
 
@@ -322,9 +297,9 @@ impl<'a, R: Reader> DerReader<'a, R> {
 mod test {
     use std::io::BufReader;
 
-    use super::{Element, SpannedElement, DerReader};
+    use super::{Element, DerReader};
 
-    fn parse(input: &[u8]) -> super::DerResult<SpannedElement> {
+    fn parse(input: &[u8]) -> super::DerResult<Element> {
         let mut mem = BufReader::new(input);
         let mut reader = DerReader::new(&mut mem, 0);
         reader.read_element()
@@ -332,7 +307,7 @@ mod test {
 
     fn check(input: &[u8], expected: Element) {
         let elem = parse(input).unwrap();
-        assert_eq!(elem.elem, expected);
+        assert_eq!(elem, expected);
     }
 
     fn check_eof(input: &[u8]) {
@@ -429,17 +404,10 @@ mod test {
     fn test_sequence() {
         let der = b"\x30\x0A\x16\x05Smith\x01\x01\xFF";
         let elem = parse(der).unwrap();
-        assert_eq!(elem.start, 0);
-        assert_eq!(elem.end, 12);
-        match elem.elem {
+        match elem {
             super::Sequence(ref seq) => {
-                assert_eq!(seq.get(0).start, 2);
-                assert_eq!(seq.get(0).end, 9);
-                assert_eq!(seq.get(0).elem, super::IA5String("Smith".to_ascii().to_owned()));
-
-                assert_eq!(seq.get(1).start, 9);
-                assert_eq!(seq.get(1).end, 12);
-                assert_eq!(seq.get(1).elem, super::Boolean(true));
+                assert_eq!(seq[0], super::IA5String("Smith".to_ascii().to_owned()));
+                assert_eq!(seq[1], super::Boolean(true));
             }
             _ => fail!("expected sequence"),
         }

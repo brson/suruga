@@ -1,86 +1,14 @@
+// Construct certificate struct from asn.1 tree
+//
 // http://tools.ietf.org/html/rfc5280
 // http://tools.ietf.org/html/rfc6818
 
-// TODO: just a hack for now
-
 use std::io::BufReader;
 
+use super::FromAsnTree;
 use super::der;
-use super::der::{Element, SpannedElement};
-
-#[inline(always)]
-fn get_elem<'a>(s: Option<&'a SpannedElement>) -> Option<&'a Element> {
-    match s {
-        Some(sp) => Some(&sp.elem),
-        None => None,
-    }
-}
-
-// TODO parameters..
-macro_rules! alg_identifier(
-    ($(
-        $id:ident = [$($v:expr),+]
-    ),+) => (
-        #[allow(non_camel_case_types)]
-        pub enum AlgorithmIdentifier {
-            $(
-                $id,
-            )+
-        }
-
-        impl AlgorithmIdentifier {
-            pub fn from_obj_id(s: &[u64]) -> Option<AlgorithmIdentifier> {
-                $({
-                    let expected = [$($v),+];
-                    if s == expected.as_slice() {
-                        return Some($id);
-                    }
-                })+
-                return None;
-            }
-        }
-    )
-)
-
-// "Encryption" means signature.
-alg_identifier!(
-    // TODO incomplete
-    // RFC 3279
-    rsaEncryption = [1, 2, 840, 113549, 1, 1, 1],
-    md5WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 4],
-
-    // RFC 4055
-    sha256WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 11],
-    sha384WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 12],
-    sha512WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 13],
-    sha224WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 14]
-)
-
-impl AlgorithmIdentifier {
-    fn parse_elem(children: &[SpannedElement]) -> der::DerResult<AlgorithmIdentifier> {
-        let mut iter = children.iter();
-        let mut next = iter.next();
-        let mut _consumed = false;
-
-        let algorithm: &[u64] = match get_elem(next) {
-            Some(&der::ObjectIdentifier(ref oid)) => oid.as_slice(),
-            _ => return Err(der::InvalidValue),
-        };
-        next = iter.next();
-
-        // TODO: parameter
-        match get_elem(next) {
-            Some(&der::Null) => {},
-            _ => unimplemented!(),
-        }
-        next = iter.next();
-
-        match AlgorithmIdentifier::from_obj_id(algorithm) {
-            Some(alg) => Ok(alg),
-            None => return Err(der::InvalidValue),
-        }
-    }
-}
+use super::der::{Element, DerResult};
+use super::alg_id::AlgorithmIdentifier;
 
 // RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
 // RelativeDistinguishedName ::= SET SIZE (1..MAX) OF AttributeTypeAndValue
@@ -95,8 +23,8 @@ pub struct Name {
     vals: int,
 }
 
-impl Name {
-    fn parse_elem(children: &[SpannedElement]) -> der::DerResult<Name> {
+impl FromAsnTree for Name {
+    fn from_asn(children: &[Element]) -> DerResult<Name> {
         //unimplemented!();
         // TODO
         Ok(Name {
@@ -110,77 +38,71 @@ pub struct TbsCertificate {
     serial_number: Vec<u8>,
     signature: AlgorithmIdentifier,
     issuer: Name,
-    //validity: Validity,
-    //subject: Name,
-    //subjectPublicKeyInfo: SubjectPublicKeyInfo,
-    //issuerUniqueID: Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
-    //subjectUniqueID:  Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
-    //extensions: Option<Extensions>, // If present, version MUST be v3
+    // validity: Validity,
+    // subject: Name,
+    // subjectPublicKeyInfo: SubjectPublicKeyInfo,
+    // issuerUniqueID: Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
+    // subjectUniqueID:  Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
+    // extensions: Option<Extensions>, // If present, version MUST be v3
 }
 
-impl TbsCertificate {
-    fn parse_elem(children: &[SpannedElement]) -> der::DerResult<TbsCertificate> {
-        let mut iter = children.iter();
-        let mut next = iter.next();
+impl FromAsnTree for TbsCertificate {
+    fn from_asn(children: &[Element]) -> DerResult<TbsCertificate> {
+        let mut index = 0u;
 
-        let version: u8 = {
-            let mut consumed = false;
-            let value = match get_elem(next) {
-                Some(&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
-                    consumed = true;
+        let version: u8 = match children.get(index) {
+            Some(&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
+                index += 1;
 
-                    if elems.len() != 1 {
-                        return Err(der::InvalidValue);
-                    }
-                    match elems.get(0).elem {
-                        der::Integer(ref vals) => {
-                            if vals.len() != 1 {
-                                return Err(der::InvalidValue);
-                            }
-                            *vals.get(0)
+                if elems.len() != 1 {
+                    return Err(der::InvalidValue);
+                }
+                match elems.get(0) {
+                    &der::Integer(ref vals) => {
+                        if vals.len() != 1 {
+                            return Err(der::InvalidValue);
                         }
-                        _ => return Err(der::InvalidValue),
+                        *vals.get(0)
                     }
+                    _ => return Err(der::InvalidValue),
                 }
-                _ => 1u8,
-            };
-            if consumed {
-                next = iter.next();
             }
-            value
+            _ => 1u8,
         };
 
-        let serial_number: Vec<u8> = match get_elem(next) {
-            Some(&der::Integer(ref vals)) => vals.clone(),
+        let serial_number: Vec<u8> = match children.get(index) {
+            Some(&der::Integer(ref vals)) => {
+                index += 1;
+                vals.clone()
+            }
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
 
-        let signature: AlgorithmIdentifier = match get_elem(next) {
+        let signature: AlgorithmIdentifier = match children.get(index) {
             Some(&der::Sequence(ref children)) => {
-                match AlgorithmIdentifier::parse_elem(children.as_slice()) {
+                index += 1;
+                match FromAsnTree::from_asn(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
                 }
             }
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
 
-        let issuer: Name = match get_elem(next) {
+        let issuer: Name = match children.get(index) {
             Some(&der::Sequence(ref children)) => {
-                match Name::parse_elem(children.as_slice()) {
+                index += 1;
+                match FromAsnTree::from_asn(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
                 }
             }
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
 
-        // if next != None {
-        //  ....
-        // }
+        if index != children.len() {
+            debug!("ERROR: value remains");
+        }
 
         Ok(TbsCertificate {
             version: version,
@@ -197,36 +119,35 @@ pub struct Certificate {
     sig_val: Vec<u8>,
 }
 
-impl Certificate {
-    fn parse_elem(children: &[SpannedElement]) -> der::DerResult<Certificate> {
-        let mut iter = children.iter();
-        let mut next = iter.next();
-        let mut _consumed = false;
+impl FromAsnTree for Certificate {
+    fn from_asn(children: &[Element]) -> DerResult<Certificate> {
+        let mut idx = 0;
 
-        let tbs_cert: TbsCertificate = match get_elem(next) {
+        let tbs_cert: TbsCertificate = match children.get(idx) {
             Some(&der::Sequence(ref children)) => {
-                match TbsCertificate::parse_elem(children.as_slice()) {
+                idx += 1;
+                match FromAsnTree::from_asn(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
                 }
             }
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
 
-        let sig_alg: AlgorithmIdentifier = match get_elem(next) {
+        let sig_alg: AlgorithmIdentifier = match children.get(idx) {
             Some(&der::Sequence(ref children)) => {
-                match AlgorithmIdentifier::parse_elem(children.as_slice()) {
+                idx += 1;
+                match FromAsnTree::from_asn(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
                 }
             }
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
 
-        let sig_val: Vec<u8> = match get_elem(next) {
+        let sig_val: Vec<u8> = match children.get(idx) {
             Some(&der::BitString(n, ref c)) => {
+                idx += 1;
                 if n != 0 {
                     unimplemented!();
                 }
@@ -234,7 +155,11 @@ impl Certificate {
             }
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
+
+        if idx != children.len() {
+            // too long
+            return Err(der::InvalidValue);
+        }
 
         Ok(Certificate {
             tbs_cert: tbs_cert,
@@ -245,7 +170,7 @@ impl Certificate {
 }
 
 // TODO DerResult? TlsResult?
-pub fn parse_certificate(cert: &[u8]) -> der::DerResult<Certificate> {
+pub fn parse_certificate(cert: &[u8]) -> DerResult<Certificate> {
     let cert_tree = {
         let mut mem = BufReader::new(cert);
         let mut reader = der::DerReader::new(&mut mem, 0);
@@ -254,9 +179,11 @@ pub fn parse_certificate(cert: &[u8]) -> der::DerResult<Certificate> {
         cert_tree
     };
 
-    let certificate = match cert_tree.elem {
+    // TODO: compute length of TbsCertificate
+
+    let certificate = match cert_tree {
         der::Sequence(ref children) => {
-            Certificate::parse_elem(children.as_slice())
+            FromAsnTree::from_asn(children.as_slice())
         }
         _ => return Err(der::InvalidValue),
     };

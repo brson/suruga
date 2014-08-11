@@ -44,10 +44,7 @@ pub mod signature;
 pub mod alert;
 pub mod handshake;
 
-pub mod x509 {
-    pub mod der;
-    pub mod cert;
-}
+pub mod x509;
 
 #[cfg(test)] mod test;
 
