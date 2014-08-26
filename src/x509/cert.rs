@@ -33,8 +33,20 @@ impl FromAsnTree for Name {
     }
 }
 
+pub enum Version {
+    Version1,
+    Version2,
+    Version3,
+}
+
+impl Version {
+    pub fn default() -> Version {
+        Version1
+    }
+}
+
 pub struct TbsCertificate {
-    version: u8,
+    version: Version,
     serial_number: Vec<u8>,
     signature: AlgorithmIdentifier,
     issuer: Name,
@@ -50,7 +62,42 @@ impl FromAsnTree for TbsCertificate {
     fn from_asn(children: &[Element]) -> DerResult<TbsCertificate> {
         let mut index = 0u;
 
-        let version: u8 = match children.get(index) {
+        let version: Version = match children.get(index) {
+            Some(&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
+                index += 1;
+
+                // real routine here
+
+                if elems.len() != 1 {
+                    return Err(der::InvalidValue);
+                }
+
+                let val = match elems.get(0) {
+                    &der::Integer(ref vals) => {
+                        if vals.len() != 1 {
+                            return Err(der::InvalidValue);
+                        }
+                        let val = *vals.get(0);
+                        let val = match val {
+                            0 => Version1,
+                            1 => Version2,
+                            2 => Version3,
+                            _ => return Err(der::InvalidValue),
+                        };
+                        val
+                    }
+                    _ => return Err(der::InvalidValue),
+                };
+
+                // real routine ends here
+
+                val
+            },
+            None => Version::default(),
+            _ => return Err(der::InvalidValue),
+        };
+
+        match children.get(index) {
             Some(&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
                 index += 1;
 
@@ -67,7 +114,10 @@ impl FromAsnTree for TbsCertificate {
                     _ => return Err(der::InvalidValue),
                 }
             }
-            _ => 1u8,
+            // default
+            _ => {
+                1u8
+            }
         };
 
         let serial_number: Vec<u8> = match children.get(index) {
@@ -112,6 +162,33 @@ impl FromAsnTree for TbsCertificate {
         })
     }
 }
+
+// macro_rules! foo(
+//     (
+//         struct $name:ident {
+//             $(
+//                 $elem:ident: $ty:ty $asn_ty:ident
+//             ),+
+//         }
+//     ) => (
+//         pub struct $name {
+//             $(
+//                 $elem: $ty,
+//             )+
+//         }
+
+//         impl FromAsnTree for $name {
+//             fn from_asn(children: $[Element] -> DerResult<$name> {
+//                 let mut idx = 0;
+//                 $(
+//                     let $elem: $ty = match children.get(idx) {
+//                         Some(&bar!($asn_ty, children))
+//                     }
+//                 )+
+//             }
+//         }
+//     )
+// )
 
 pub struct Certificate {
     tbs_cert: TbsCertificate,
