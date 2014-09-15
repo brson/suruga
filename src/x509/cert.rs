@@ -10,26 +10,42 @@ use super::der;
 use super::der::{Element, DerResult};
 use super::alg_id::AlgorithmIdentifier;
 
+// Name is actually CHOICE, but there is only one possibility in RFC 5280:
+// Name ::= CHOICE { rdnSequence  RDNSequence }
 // RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
-// RelativeDistinguishedName ::= SET SIZE (1..MAX) OF AttributeTypeAndValue
-// AttributeTypeAndValue ::= SEQUENCE {
-// type     AttributeType,
-// value    AttributeValue }
-// AttributeType ::= OBJECT IDENTIFIER
-// AttributeValue ::= ANY -- DEFINED BY AttributeType
 #[deriving(Show)]
 pub struct Name {
-    //rdnSequence(RDNSequence),
-    // TODO dummy
-    vals: int,
+    seq: Vec<RelativeDistinguishedName>,
+}
+
+// RelativeDistinguishedName ::= SET SIZE (1..MAX) OF AttributeTypeAndValue
+#[deriving(Show)]
+pub struct RelativeDistinguishedName {
+    // TODO 1..MAX
+    set: Vec<AttributeTypeAndValue>,
+}
+
+#[deriving(Show)]
+pub struct AttributeTypeAndValue {
+    attr_type: Vec<u8>, // oid
+    attr_value: Vec<u8>, // "ANY"
 }
 
 impl FromAsnTree for Name {
     fn from_asn(children: &[Element]) -> DerResult<Name> {
-        //unimplemented!();
-        // TODO
+        let mut seq = Vec::new();
+        for elem in children.iter() {
+            match elem {
+                &der::Set(ref elems) => {
+                    debug!("set elems: {}", elems);
+                    // TODO
+                }
+                _ => return Err(der::InvalidValue),
+            }
+        }
+
         Ok(Name {
-            vals: 1,
+            seq: seq
         })
     }
 }
