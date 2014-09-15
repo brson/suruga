@@ -41,12 +41,62 @@ pub enum Version {
     Version3,
 }
 
+impl Version {
+    pub fn from_integer(integer: &[u8]) -> DerResult<Version> {
+        if integer.len() != 1 {
+            return Err(der::InvalidValue);
+        }
+        let val = match integer[0] {
+            0 => Version1,
+            1 => Version2,
+            2 => Version3,
+            _ => return Err(der::InvalidValue),
+        };
+        Ok(val)
+    }
+}
+
+#[deriving(Show)]
+pub enum Time {
+    UtcTime(Vec<u8>), // TODO raw value
+    // GeneralizedTime(der::GeneralizedTime), // TODO
+}
+
+#[deriving(Show)]
+pub struct Validity {
+    notBefore: Time,
+    notAfter: Time,
+}
+
+impl Validity {
+    pub fn from_seq(children: &[Element]) -> DerResult<Validity> {
+        let mut iter = children.iter();
+        let notBefore = match iter.next() {
+            Some(&der::UtcTime(ref data)) => UtcTime(data.clone()),
+            _what => {
+                debug!("what: {}", _what);
+                return Err(der::InvalidValue);
+            }
+        };
+
+        let notAfter = match iter.next() {
+            Some(&der::UtcTime(ref data)) => UtcTime(data.clone()),
+            _ => return Err(der::InvalidValue),
+        };
+
+        Ok(Validity {
+            notBefore: notBefore,
+            notAfter: notAfter,
+        })
+    }
+}
+
 pub struct TbsCertificate {
     version: Version,
     serial_number: Vec<u8>,
     signature: AlgorithmIdentifier,
     issuer: Name,
-    // validity: Validity,
+    validity: Validity,
     // subject: Name,
     // subjectPublicKeyInfo: SubjectPublicKeyInfo,
     // issuerUniqueID: Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
@@ -67,19 +117,7 @@ impl FromAsnTree for TbsCertificate {
                 }
 
                 let val = match elems.get(0) {
-                    &der::Integer(ref vals) => {
-                        if vals.len() != 1 {
-                            return Err(der::InvalidValue);
-                        }
-                        let val = *vals.get(0);
-                        let val = match val {
-                            0 => Version1,
-                            1 => Version2,
-                            2 => Version3,
-                            _ => return Err(der::InvalidValue),
-                        };
-                        val
-                    }
+                    &der::Integer(ref vals) => try!(Version::from_integer(vals.as_slice())),
                     _ => return Err(der::InvalidValue),
                 };
 
@@ -116,6 +154,12 @@ impl FromAsnTree for TbsCertificate {
         };
         debug!("issuer: {}", issuer);
 
+        let validity: Validity = match iter.next() {
+            Some(&der::Sequence(ref children)) => try!(Validity::from_seq(children.as_slice())),
+            _ => return Err(der::InvalidValue),
+        };
+        debug!("validity: {}", validity);
+
         match iter.next() {
             Some(_) => debug!("ERROR: value remains"),
             _ => {}
@@ -126,6 +170,7 @@ impl FromAsnTree for TbsCertificate {
             serial_number: serial_number,
             signature: signature,
             issuer: issuer,
+            validity: validity,
         })
     }
 }
