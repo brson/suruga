@@ -1,6 +1,5 @@
 use super::der::{Element, DerResult};
 use super::der;
-use super::FromAsnTree;
 
 // TODO parameters..
 macro_rules! alg_identifier(
@@ -44,8 +43,8 @@ alg_identifier!(
     sha224WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 14]
 )
 
-impl FromAsnTree for AlgorithmIdentifier {
-    fn from_asn(children: &[Element]) -> DerResult<AlgorithmIdentifier> {
+impl AlgorithmIdentifier {
+    pub fn from_seq(children: &[Element]) -> DerResult<AlgorithmIdentifier> {
         let mut iter = children.iter();
 
         let algorithm: &[u64] = match iter.next() {

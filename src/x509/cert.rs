@@ -5,7 +5,6 @@
 
 use std::io::BufReader;
 
-use super::FromAsnTree;
 use super::der;
 use super::der::{Element, DerResult};
 use super::alg_id::AlgorithmIdentifier;
@@ -31,8 +30,8 @@ pub struct AttributeTypeAndValue {
     attr_value: Vec<u8>, // "ANY"
 }
 
-impl FromAsnTree for Name {
-    fn from_asn(children: &[Element]) -> DerResult<Name> {
+impl Name {
+    fn from_seq(children: &[Element]) -> DerResult<Name> {
         let mut seq = Vec::new();
         for elem in children.iter() {
             match elem {
@@ -107,6 +106,35 @@ impl Validity {
     }
 }
 
+#[deriving(Show)]
+pub struct SubjectPublicKeyInfo {
+    alg: AlgorithmIdentifier,
+    subject_pub_key: Vec<u8>, // BitString. TODO
+}
+
+impl SubjectPublicKeyInfo {
+    pub fn from_seq(children: &[Element]) -> DerResult<SubjectPublicKeyInfo> {
+        let mut iter = children.iter();
+        let alg = match iter.next() {
+            Some(&der::Sequence(ref children)) => try!(AlgorithmIdentifier::from_seq(children.as_slice())),
+            _ => return Err(der::InvalidValue),
+        };
+
+        let subject_pub_key = match iter.next() {
+            Some(&der::BitString(offset, ref bytes)) => {
+                Vec::new() // TODO
+            }
+            _ => return Err(der::InvalidValue),
+        };
+
+        Ok(SubjectPublicKeyInfo {
+            alg: alg,
+            subject_pub_key: subject_pub_key,
+        })
+    }
+}
+
+#[deriving(Show)]
 pub struct TbsCertificate {
     version: Version,
     serial_number: Vec<u8>,
@@ -114,14 +142,14 @@ pub struct TbsCertificate {
     issuer: Name,
     validity: Validity,
     subject: Name,
-    // subjectPublicKeyInfo: SubjectPublicKeyInfo,
+    subject_pub_key_info: SubjectPublicKeyInfo,
     // issuerUniqueID: Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
     // subjectUniqueID:  Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
     // extensions: Option<Extensions>, // If present, version MUST be v3
 }
 
-impl FromAsnTree for TbsCertificate {
-    fn from_asn(children: &[Element]) -> DerResult<TbsCertificate> {
+impl TbsCertificate {
+    pub fn from_seq(children: &[Element]) -> DerResult<TbsCertificate> {
         let mut iter = children.iter().peekable();
 
         let (version, matched): (Version, bool) = match iter.peek() {
@@ -159,13 +187,13 @@ impl FromAsnTree for TbsCertificate {
         debug!("serial_number: {}", serial_number);
 
         let signature: AlgorithmIdentifier = match iter.next() {
-            Some(&der::Sequence(ref children)) => try!(FromAsnTree::from_asn(children.as_slice())),
+            Some(&der::Sequence(ref children)) => try!(AlgorithmIdentifier::from_seq(children.as_slice())),
             _ => return Err(der::InvalidValue),
         };
         debug!("signature: {}", signature);
 
         let issuer: Name = match iter.next() {
-            Some(&der::Sequence(ref children)) => try!(FromAsnTree::from_asn(children.as_slice())),
+            Some(&der::Sequence(ref children)) => try!(Name::from_seq(children.as_slice())),
             _ => return Err(der::InvalidValue),
         };
         debug!("issuer: {}", issuer);
@@ -177,10 +205,16 @@ impl FromAsnTree for TbsCertificate {
         debug!("validity: {}", validity);
 
         let subject: Name = match iter.next() {
-            Some(&der::Sequence(ref children)) => try!(FromAsnTree::from_asn(children.as_slice())),
+            Some(&der::Sequence(ref children)) => try!(Name::from_seq(children.as_slice())),
             _ => return Err(der::InvalidValue),
         };
         debug!("subject: {}", subject);
+
+        let subject_pub_key_info: SubjectPublicKeyInfo = match iter.next() {
+            Some(&der::Sequence(ref children)) => try!(SubjectPublicKeyInfo::from_seq(children.as_slice())),
+            _ => return Err(der::InvalidValue),
+        };
+        debug!("subject_pub_key_info: {}", subject_pub_key_info);
 
         match iter.next() {
             Some(_) => debug!("ERROR: value remains"),
@@ -194,6 +228,7 @@ impl FromAsnTree for TbsCertificate {
             issuer: issuer,
             validity: validity,
             subject: subject,
+            subject_pub_key_info: subject_pub_key_info,
         })
     }
 }
@@ -204,14 +239,14 @@ pub struct Certificate {
     sig_val: Vec<u8>,
 }
 
-impl FromAsnTree for Certificate {
-    fn from_asn(children: &[Element]) -> DerResult<Certificate> {
+impl Certificate {
+    pub fn from_seq(children: &[Element]) -> DerResult<Certificate> {
         let mut idx = 0;
 
         let tbs_cert: TbsCertificate = match children.get(idx) {
             Some(&der::Sequence(ref children)) => {
                 idx += 1;
-                match FromAsnTree::from_asn(children.as_slice()) {
+                match TbsCertificate::from_seq(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
                 }
@@ -222,7 +257,7 @@ impl FromAsnTree for Certificate {
         let sig_alg: AlgorithmIdentifier = match children.get(idx) {
             Some(&der::Sequence(ref children)) => {
                 idx += 1;
-                match FromAsnTree::from_asn(children.as_slice()) {
+                match AlgorithmIdentifier::from_seq(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
                 }
@@ -268,7 +303,7 @@ pub fn parse_certificate(cert: &[u8]) -> DerResult<Certificate> {
 
     let certificate = match cert_tree {
         der::Sequence(ref children) => {
-            FromAsnTree::from_asn(children.as_slice())
+            Certificate::from_seq(children.as_slice())
         }
         _ => {
             debug!("cert parse err");
