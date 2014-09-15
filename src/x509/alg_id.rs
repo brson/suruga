@@ -8,6 +8,7 @@ macro_rules! alg_identifier(
         $id:ident = [$($v:expr),+]
     ),+) => (
         #[allow(non_camel_case_types)]
+        #[deriving(Show)]
         pub enum AlgorithmIdentifier {
             $(
                 $id,
@@ -34,6 +35,7 @@ alg_identifier!(
     // RFC 3279
     rsaEncryption = [1, 2, 840, 113549, 1, 1, 1],
     md5WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 4],
+    sha1WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 5],
 
     // RFC 4055
     sha256WithRSAEncryption = [1, 2, 840, 113549, 1, 1, 11],
@@ -45,21 +47,20 @@ alg_identifier!(
 impl FromAsnTree for AlgorithmIdentifier {
     fn from_asn(children: &[Element]) -> DerResult<AlgorithmIdentifier> {
         let mut iter = children.iter();
-        let mut next = iter.next();
-        let mut _consumed = false;
 
-        let algorithm: &[u64] = match next {
+        let algorithm: &[u64] = match iter.next() {
             Some(&der::ObjectIdentifier(ref oid)) => oid.as_slice(),
             _ => return Err(der::InvalidValue),
         };
-        next = iter.next();
+        debug!("algorithm: {}", algorithm);
 
         // TODO: parameter
-        match next {
+        match iter.next() {
             Some(&der::Null) => {},
             _ => unimplemented!(),
         }
-        next = iter.next();
+
+        // TODO more more
 
         match AlgorithmIdentifier::from_obj_id(algorithm) {
             Some(alg) => Ok(alg),

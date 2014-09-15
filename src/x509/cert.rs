@@ -17,6 +17,7 @@ use super::alg_id::AlgorithmIdentifier;
 // value    AttributeValue }
 // AttributeType ::= OBJECT IDENTIFIER
 // AttributeValue ::= ANY -- DEFINED BY AttributeType
+#[deriving(Show)]
 pub struct Name {
     //rdnSequence(RDNSequence),
     // TODO dummy
@@ -33,16 +34,11 @@ impl FromAsnTree for Name {
     }
 }
 
+#[deriving(Show)]
 pub enum Version {
     Version1,
     Version2,
     Version3,
-}
-
-impl Version {
-    pub fn default() -> Version {
-        Version1
-    }
 }
 
 pub struct TbsCertificate {
@@ -60,13 +56,11 @@ pub struct TbsCertificate {
 
 impl FromAsnTree for TbsCertificate {
     fn from_asn(children: &[Element]) -> DerResult<TbsCertificate> {
-        let mut index = 0u;
+        let mut iter = children.iter().peekable();
 
-        let version: Version = match children.get(index) {
-            Some(&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
-                index += 1;
-
-                // real routine here
+        let (version, matched): (Version, bool) = match iter.peek() {
+            Some(&&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
+                // real routine starts here
 
                 if elems.len() != 1 {
                     return Err(der::InvalidValue);
@@ -91,67 +85,40 @@ impl FromAsnTree for TbsCertificate {
 
                 // real routine ends here
 
-                val
+                (val, true)
             },
-            None => Version::default(),
+            // default
+            None => (Version1, false),
             _ => return Err(der::InvalidValue),
         };
+        if matched {
+            iter.next();
+        }
+        debug!("version: {}", version);
 
-        match children.get(index) {
-            Some(&der::UnknownConstructed(0, der::ContextSpecific, ref elems)) => {
-                index += 1;
-
-                if elems.len() != 1 {
-                    return Err(der::InvalidValue);
-                }
-                match elems.get(0) {
-                    &der::Integer(ref vals) => {
-                        if vals.len() != 1 {
-                            return Err(der::InvalidValue);
-                        }
-                        *vals.get(0)
-                    }
-                    _ => return Err(der::InvalidValue),
-                }
-            }
-            // default
-            _ => {
-                1u8
-            }
-        };
-
-        let serial_number: Vec<u8> = match children.get(index) {
+        let serial_number: Vec<u8> = match iter.next() {
             Some(&der::Integer(ref vals)) => {
-                index += 1;
                 vals.clone()
             }
             _ => return Err(der::InvalidValue),
         };
+        debug!("serial_number: {}", serial_number);
 
-        let signature: AlgorithmIdentifier = match children.get(index) {
-            Some(&der::Sequence(ref children)) => {
-                index += 1;
-                match FromAsnTree::from_asn(children.as_slice()) {
-                    Ok(s) => s,
-                    Err(e) => return Err(e),
-                }
-            }
+        let signature: AlgorithmIdentifier = match iter.next() {
+            Some(&der::Sequence(ref children)) => try!(FromAsnTree::from_asn(children.as_slice())),
             _ => return Err(der::InvalidValue),
         };
+        debug!("signature: {}", signature);
 
-        let issuer: Name = match children.get(index) {
-            Some(&der::Sequence(ref children)) => {
-                index += 1;
-                match FromAsnTree::from_asn(children.as_slice()) {
-                    Ok(s) => s,
-                    Err(e) => return Err(e),
-                }
-            }
+        let issuer: Name = match iter.next() {
+            Some(&der::Sequence(ref children)) => try!(FromAsnTree::from_asn(children.as_slice())),
             _ => return Err(der::InvalidValue),
         };
+        debug!("issuer: {}", issuer);
 
-        if index != children.len() {
-            debug!("ERROR: value remains");
+        match iter.next() {
+            Some(_) => debug!("ERROR: value remains"),
+            _ => {}
         }
 
         Ok(TbsCertificate {
@@ -162,33 +129,6 @@ impl FromAsnTree for TbsCertificate {
         })
     }
 }
-
-// macro_rules! foo(
-//     (
-//         struct $name:ident {
-//             $(
-//                 $elem:ident: $ty:ty $asn_ty:ident
-//             ),+
-//         }
-//     ) => (
-//         pub struct $name {
-//             $(
-//                 $elem: $ty,
-//             )+
-//         }
-
-//         impl FromAsnTree for $name {
-//             fn from_asn(children: $[Element] -> DerResult<$name> {
-//                 let mut idx = 0;
-//                 $(
-//                     let $elem: $ty = match children.get(idx) {
-//                         Some(&bar!($asn_ty, children))
-//                     }
-//                 )+
-//             }
-//         }
-//     )
-// )
 
 pub struct Certificate {
     tbs_cert: TbsCertificate,
@@ -262,7 +202,10 @@ pub fn parse_certificate(cert: &[u8]) -> DerResult<Certificate> {
         der::Sequence(ref children) => {
             FromAsnTree::from_asn(children.as_slice())
         }
-        _ => return Err(der::InvalidValue),
+        _ => {
+            debug!("cert parse err");
+            return Err(der::InvalidValue);
+        }
     };
 
     // TODO
