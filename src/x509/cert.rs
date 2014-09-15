@@ -113,7 +113,7 @@ pub struct TbsCertificate {
     signature: AlgorithmIdentifier,
     issuer: Name,
     validity: Validity,
-    // subject: Name,
+    subject: Name,
     // subjectPublicKeyInfo: SubjectPublicKeyInfo,
     // issuerUniqueID: Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
     // subjectUniqueID:  Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
@@ -176,6 +176,12 @@ impl FromAsnTree for TbsCertificate {
         };
         debug!("validity: {}", validity);
 
+        let subject: Name = match iter.next() {
+            Some(&der::Sequence(ref children)) => try!(FromAsnTree::from_asn(children.as_slice())),
+            _ => return Err(der::InvalidValue),
+        };
+        debug!("subject: {}", subject);
+
         match iter.next() {
             Some(_) => debug!("ERROR: value remains"),
             _ => {}
@@ -187,6 +193,7 @@ impl FromAsnTree for TbsCertificate {
             signature: signature,
             issuer: issuer,
             validity: validity,
+            subject: subject,
         })
     }
 }
