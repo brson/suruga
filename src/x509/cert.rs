@@ -2,9 +2,15 @@
 //
 // http://tools.ietf.org/html/rfc5280
 // http://tools.ietf.org/html/rfc6818
+//
+// TODO
+// more tests!
+// http://csrc.nist.gov/groups/ST/crypto_apps_infra/pki/pkitesting.html
+// check ff/chrome testsuite
 
 use std::io::BufReader;
 
+use super::bitstring::BitString;
 use super::der;
 use super::der::{Element, DerResult};
 use super::alg_id::AlgorithmIdentifier;
@@ -77,39 +83,64 @@ pub enum Time {
     // GeneralizedTime(der::GeneralizedTime), // TODO
 }
 
-#[deriving(Show)]
-pub struct Validity {
-    notBefore: Time,
-    notAfter: Time,
-}
-
-impl Validity {
-    pub fn from_seq(children: &[Element]) -> DerResult<Validity> {
-        let mut iter = children.iter();
-        let notBefore = match iter.next() {
-            Some(&der::UtcTime(ref data)) => UtcTime(data.clone()),
+impl Time {
+    // no fallback
+    pub fn from_element(elem: &Element) -> DerResult<Time> {
+        let value = match elem {
+            &der::UtcTime(ref data) => UtcTime(data.clone()),
             _what => {
                 debug!("what: {}", _what);
                 return Err(der::InvalidValue);
             }
         };
-
-        let notAfter = match iter.next() {
-            Some(&der::UtcTime(ref data)) => UtcTime(data.clone()),
-            _ => return Err(der::InvalidValue),
-        };
-
-        Ok(Validity {
-            notBefore: notBefore,
-            notAfter: notAfter,
-        })
+        Ok(value)
     }
 }
+
+macro_rules! seq(
+    (
+        struct $name:ident {
+            $(
+                $field:ident: $field_ty:ident
+            ),+
+        }
+    ) => (
+        #[deriving(Show)]
+        pub struct $name {
+            $(
+                $field: $field_ty,
+            )+
+        }
+
+        impl $name {
+            pub fn from_seq(children: &[Element]) -> DerResult<$name> {
+                let mut iter = children.iter();
+                $(
+                    let $field: $field_ty = match iter.next() {
+                        Some(elem) => try!($field_ty::from_element(elem)),
+                        None => return Err(der::InvalidValue),
+                    };
+                )+
+
+                Ok($name {
+                    $(
+                        $field: $field,
+                    )+
+                })
+            }
+        }
+    )
+)
+
+seq!(struct Validity {
+    notBefore: Time,
+    notAfter: Time
+})
 
 #[deriving(Show)]
 pub struct SubjectPublicKeyInfo {
     alg: AlgorithmIdentifier,
-    subject_pub_key: Vec<u8>, // BitString. TODO
+    subject_pub_key: BitString,
 }
 
 impl SubjectPublicKeyInfo {
@@ -121,9 +152,7 @@ impl SubjectPublicKeyInfo {
         };
 
         let subject_pub_key = match iter.next() {
-            Some(&der::BitString(offset, ref bytes)) => {
-                Vec::new() // TODO
-            }
+            Some(&der::BitStringElem(ref elem)) => elem.clone(),
             _ => return Err(der::InvalidValue),
         };
 
@@ -134,6 +163,17 @@ impl SubjectPublicKeyInfo {
     }
 }
 
+// Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
+
+// pub struct Extension {
+// extnID      OBJECT IDENTIFIER,
+// critical    BOOLEAN DEFAULT FALSE,
+// extnValue   OCTET STRING
+// -- contains the DER encoding of an ASN.1 value
+// -- corresponding to the extension type identified
+// -- by extnID
+// }
+
 #[deriving(Show)]
 pub struct TbsCertificate {
     version: Version,
@@ -143,8 +183,8 @@ pub struct TbsCertificate {
     validity: Validity,
     subject: Name,
     subject_pub_key_info: SubjectPublicKeyInfo,
-    // issuerUniqueID: Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
-    // subjectUniqueID:  Option<UniqueIdentifier>, // If present, version MUST be v2 or v3
+    issuer_unique_id: Option<BitString>, // If present, version MUST be v2 or v3
+    subject_unique_id:  Option<BitString>, // If present, version MUST be v2 or v3
     // extensions: Option<Extensions>, // If present, version MUST be v3
 }
 
@@ -170,8 +210,7 @@ impl TbsCertificate {
                 (val, true)
             },
             // default
-            None => (Version1, false),
-            _ => return Err(der::InvalidValue),
+            _ => (Version1, false),
         };
         if matched {
             iter.next();
@@ -216,6 +255,31 @@ impl TbsCertificate {
         };
         debug!("subject_pub_key_info: {}", subject_pub_key_info);
 
+        // TODO should not exist for version 1
+        let issuer_unique_id: Option<BitString> = match iter.peek() {
+            Some(&&der::BitStringElem(ref bitstring)) => Some(bitstring.clone()),
+            _e => { debug!("unmatched: {}", _e); None }
+        };
+        match issuer_unique_id {
+            Some(..) => { iter.next(); }
+            None => {}
+        }
+        debug!("issuer_unique_id: {}", issuer_unique_id);
+
+        // TODO should not exist for version 1
+        let subject_unique_id: Option<BitString> = match iter.peek() {
+            Some(&&der::BitStringElem(ref bitstring)) => Some(bitstring.clone()),
+            _e => { debug!("unmatched: {}", _e); None }
+        };
+        match subject_unique_id {
+            Some(..) => { iter.next(); }
+            None => {}
+        }
+        debug!("subject_unique_id: {}", subject_unique_id);
+
+        // TODO only for version 3
+        // let extensions;
+
         match iter.next() {
             Some(_) => debug!("ERROR: value remains"),
             _ => {}
@@ -229,6 +293,9 @@ impl TbsCertificate {
             validity: validity,
             subject: subject,
             subject_pub_key_info: subject_pub_key_info,
+            issuer_unique_id: issuer_unique_id,
+            subject_unique_id: subject_unique_id,
+            // extensions: extensions,
         })
     }
 }
@@ -236,7 +303,7 @@ impl TbsCertificate {
 pub struct Certificate {
     tbs_cert: TbsCertificate,
     sig_alg: AlgorithmIdentifier,
-    sig_val: Vec<u8>,
+    sig_val: BitString,
 }
 
 impl Certificate {
@@ -265,13 +332,10 @@ impl Certificate {
             _ => return Err(der::InvalidValue),
         };
 
-        let sig_val: Vec<u8> = match children.get(idx) {
-            Some(&der::BitString(n, ref c)) => {
+        let sig_val: BitString = match children.get(idx) {
+            Some(&der::BitStringElem(ref bitstring)) => {
                 idx += 1;
-                if n != 0 {
-                    unimplemented!();
-                }
-                c.clone()
+                bitstring.clone()
             }
             _ => return Err(der::InvalidValue),
         };

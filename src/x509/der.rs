@@ -1,5 +1,7 @@
 use std::io;
 
+use super::bitstring::BitString;
+
 // TODO just use TlsError?
 #[deriving(Show, PartialEq)]
 pub enum DerError {
@@ -31,7 +33,7 @@ pub enum Element {
     // primitives
     Boolean(bool), // 0x01
     Integer(Vec<u8>), // 0x02
-    BitString(u8, Vec<u8>), // 0x03; (number of unused bits, bytes)
+    BitStringElem(BitString), // 0x03; (number of unused bits, bytes)
     OctetString(Vec<u8>),
     Null, // 0x05
     ObjectIdentifier(Vec<u64>), // 0x06
@@ -183,7 +185,7 @@ impl<'a, R: Reader> DerReader<'a, R> {
                         Some(c) => c,
                         None => return Err(InvalidValue),
                     };
-                    BitString(unused_bits, content)
+                    BitStringElem(BitString::new(unused_bits, content))
                 }
 
                 0x04 => OctetString(content),
@@ -298,6 +300,7 @@ mod test {
     use std::io::BufReader;
 
     use super::{Element, DerReader};
+    use super::super::bitstring::BitString;
 
     fn parse(input: &[u8]) -> super::DerResult<Element> {
         let mut mem = BufReader::new(input);
@@ -377,7 +380,7 @@ mod test {
     #[test]
     fn test_bit_string() {
         check(b"\x03\x07\x04\x0A\x3B\x5F\x29\x1C\xD0",
-              super::BitString(4, Vec::from_slice(b"\x0A\x3B\x5F\x29\x1C\xD0")));
+              super::BitStringElem(BitString::new(4, Vec::from_slice(b"\x0A\x3B\x5F\x29\x1C\xD0"))));
 
         check_invalid(b"\x03\x00");
     }
