@@ -113,6 +113,13 @@ macro_rules! seq(
         }
 
         impl $name {
+            pub fn from_elem(elem: &Element) -> DerResult<$name> {
+                match elem {
+                    &der::Sequence(ref children) => $name::from_seq(children.as_slice()),
+                    _ => return Err(der::InvalidValue),
+                }
+            }
+
             pub fn from_seq(children: &[Element]) -> DerResult<$name> {
                 let mut iter = children.iter();
                 $(
@@ -165,14 +172,15 @@ impl SubjectPublicKeyInfo {
 
 // Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
 
-// pub struct Extension {
-// extnID      OBJECT IDENTIFIER,
-// critical    BOOLEAN DEFAULT FALSE,
-// extnValue   OCTET STRING
+#[deriving(Show)]
+pub struct Extension {
+    extnID: Vec<u8>, // OBJECT IDENTIFIER,
+    critical: bool, // DEFAULT FALSE,
+    extnValue: Vec<u8>, // OCTET STRING
 // -- contains the DER encoding of an ASN.1 value
 // -- corresponding to the extension type identified
 // -- by extnID
-// }
+}
 
 #[deriving(Show)]
 pub struct TbsCertificate {
@@ -185,7 +193,7 @@ pub struct TbsCertificate {
     subject_pub_key_info: SubjectPublicKeyInfo,
     issuer_unique_id: Option<BitString>, // If present, version MUST be v2 or v3
     subject_unique_id:  Option<BitString>, // If present, version MUST be v2 or v3
-    // extensions: Option<Extensions>, // If present, version MUST be v3
+    extensions: Vec<Extension>, // If present, version MUST be v3
 }
 
 impl TbsCertificate {
@@ -258,7 +266,7 @@ impl TbsCertificate {
         // TODO should not exist for version 1
         let issuer_unique_id: Option<BitString> = match iter.peek() {
             Some(&&der::BitStringElem(ref bitstring)) => Some(bitstring.clone()),
-            _e => { debug!("unmatched: {}", _e); None }
+            _ => None,
         };
         match issuer_unique_id {
             Some(..) => { iter.next(); }
@@ -269,7 +277,7 @@ impl TbsCertificate {
         // TODO should not exist for version 1
         let subject_unique_id: Option<BitString> = match iter.peek() {
             Some(&&der::BitStringElem(ref bitstring)) => Some(bitstring.clone()),
-            _e => { debug!("unmatched: {}", _e); None }
+            _ => None,
         };
         match subject_unique_id {
             Some(..) => { iter.next(); }
@@ -278,7 +286,15 @@ impl TbsCertificate {
         debug!("subject_unique_id: {}", subject_unique_id);
 
         // TODO only for version 3
-        // let extensions;
+        let mut extensions = Vec::new();
+        match iter.next() {
+            // [3] EXPLICIT
+            Some(&der::UnknownConstructed(3, der::ContextSpecific, ref elems)) => {
+                debug!("elems: {}", elems);
+            }
+            Some(..) => return Err(der::InvalidValue),
+            None => {}
+        }
 
         match iter.next() {
             Some(_) => debug!("ERROR: value remains"),
@@ -295,7 +311,7 @@ impl TbsCertificate {
             subject_pub_key_info: subject_pub_key_info,
             issuer_unique_id: issuer_unique_id,
             subject_unique_id: subject_unique_id,
-            // extensions: extensions,
+            extensions: extensions,
         })
     }
 }
