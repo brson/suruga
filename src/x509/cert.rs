@@ -300,6 +300,7 @@ impl TbsCertificate {
     }
 }
 
+#[deriving(Show)]
 pub struct Certificate {
     tbs_cert: TbsCertificate,
     sig_alg: AlgorithmIdentifier,
@@ -308,11 +309,10 @@ pub struct Certificate {
 
 impl Certificate {
     pub fn from_seq(children: &[Element]) -> DerResult<Certificate> {
-        let mut idx = 0;
+        let mut iter = children.iter();
 
-        let tbs_cert: TbsCertificate = match children.get(idx) {
+        let tbs_cert: TbsCertificate = match iter.next() {
             Some(&der::Sequence(ref children)) => {
-                idx += 1;
                 match TbsCertificate::from_seq(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
@@ -321,9 +321,8 @@ impl Certificate {
             _ => return Err(der::InvalidValue),
         };
 
-        let sig_alg: AlgorithmIdentifier = match children.get(idx) {
+        let sig_alg: AlgorithmIdentifier = match iter.next() {
             Some(&der::Sequence(ref children)) => {
-                idx += 1;
                 match AlgorithmIdentifier::from_seq(children.as_slice()) {
                     Ok(s) => s,
                     Err(e) => return Err(e),
@@ -332,17 +331,17 @@ impl Certificate {
             _ => return Err(der::InvalidValue),
         };
 
-        let sig_val: BitString = match children.get(idx) {
+        let sig_val: BitString = match iter.next() {
             Some(&der::BitStringElem(ref bitstring)) => {
-                idx += 1;
                 bitstring.clone()
             }
             _ => return Err(der::InvalidValue),
         };
 
-        if idx != children.len() {
-            // too long
-            return Err(der::InvalidValue);
+        // too long
+        match iter.next() {
+            Some(..) => return Err(der::InvalidValue),
+            None => {}
         }
 
         Ok(Certificate {
