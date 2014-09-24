@@ -10,10 +10,10 @@
 
 use std::io::BufReader;
 
-use super::bitstring::BitString;
+use super::{FromElem, BitString, Oid};
 use super::der;
 use super::der::{Element, DerResult};
-use super::alg_id::AlgorithmIdentifier;
+use super::alg_id::AlgId;
 
 // Name is actually CHOICE, but there is only one possibility in RFC 5280:
 // Name ::= CHOICE { rdnSequence  RDNSequence }
@@ -146,15 +146,15 @@ seq!(struct Validity {
 
 #[deriving(Show)]
 pub struct SubjectPublicKeyInfo {
-    alg: AlgorithmIdentifier,
+    alg: AlgId,
     subject_pub_key: BitString,
 }
 
 impl SubjectPublicKeyInfo {
     pub fn from_seq(children: &[Element]) -> DerResult<SubjectPublicKeyInfo> {
         let mut iter = children.iter();
-        let alg = match iter.next() {
-            Some(&der::Sequence(ref children)) => try!(AlgorithmIdentifier::from_seq(children.as_slice())),
+        let alg: AlgId = match iter.next() {
+            Some(elem) => try!(FromElem::from_elem(elem)),
             _ => return Err(der::InvalidValue),
         };
 
@@ -170,11 +170,9 @@ impl SubjectPublicKeyInfo {
     }
 }
 
-// Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
-
 #[deriving(Show)]
 pub struct Extension {
-    extnID: Vec<u8>, // OBJECT IDENTIFIER,
+    extnID: Oid, // OBJECT IDENTIFIER,
     critical: bool, // DEFAULT FALSE,
     extnValue: Vec<u8>, // OCTET STRING
 // -- contains the DER encoding of an ASN.1 value
@@ -186,14 +184,20 @@ pub struct Extension {
 pub struct TbsCertificate {
     version: Version,
     serial_number: Vec<u8>,
-    signature: AlgorithmIdentifier,
+    signature: AlgId,
     issuer: Name,
     validity: Validity,
     subject: Name,
     subject_pub_key_info: SubjectPublicKeyInfo,
-    issuer_unique_id: Option<BitString>, // If present, version MUST be v2 or v3
-    subject_unique_id:  Option<BitString>, // If present, version MUST be v2 or v3
-    extensions: Vec<Extension>, // If present, version MUST be v3
+
+    // If present, version MUST be v2 or v3
+    issuer_unique_id: Option<BitString>,
+    subject_unique_id:  Option<BitString>,
+
+    // simplified version of:
+    // extensions: Option<Extensions>, // If present, version MUST be v3
+    // Extensions ::= SEQUENCE SIZE (1..MAX) OF Extension
+    extensions: Vec<Extension>,
 }
 
 impl TbsCertificate {
@@ -233,8 +237,8 @@ impl TbsCertificate {
         };
         debug!("serial_number: {}", serial_number);
 
-        let signature: AlgorithmIdentifier = match iter.next() {
-            Some(&der::Sequence(ref children)) => try!(AlgorithmIdentifier::from_seq(children.as_slice())),
+        let signature: AlgId = match iter.next() {
+            Some(elem) => try!(FromElem::from_elem(elem)),
             _ => return Err(der::InvalidValue),
         };
         debug!("signature: {}", signature);
@@ -290,14 +294,25 @@ impl TbsCertificate {
         match iter.next() {
             // [3] EXPLICIT
             Some(&der::UnknownConstructed(3, der::ContextSpecific, ref elems)) => {
-                debug!("elems: {}", elems);
+                // TODO right?
+                if elems.len() != 1 {
+                    return Err(der::InvalidValue);
+                }
+                match elems[0] {
+                    der::Sequence(ref children) => {
+                        for child in children.iter() {
+                            debug!("child: {}", child);
+                        }
+                    }
+                    _ => return Err(der::InvalidValue),
+                }
             }
             Some(..) => return Err(der::InvalidValue),
             None => {}
         }
 
         match iter.next() {
-            Some(_) => debug!("ERROR: value remains"),
+            Some(..) => debug!("ERROR: value remains"),
             _ => {}
         }
 
@@ -319,7 +334,7 @@ impl TbsCertificate {
 #[deriving(Show)]
 pub struct Certificate {
     tbs_cert: TbsCertificate,
-    sig_alg: AlgorithmIdentifier,
+    sig_alg: AlgId,
     sig_val: BitString,
 }
 
@@ -337,13 +352,8 @@ impl Certificate {
             _ => return Err(der::InvalidValue),
         };
 
-        let sig_alg: AlgorithmIdentifier = match iter.next() {
-            Some(&der::Sequence(ref children)) => {
-                match AlgorithmIdentifier::from_seq(children.as_slice()) {
-                    Ok(s) => s,
-                    Err(e) => return Err(e),
-                }
-            }
+        let sig_alg: AlgId = match iter.next() {
+            Some(elem) => try!(FromElem::from_elem(elem)),
             _ => return Err(der::InvalidValue),
         };
 

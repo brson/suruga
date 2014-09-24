@@ -1,6 +1,6 @@
 use std::io;
 
-use super::bitstring::BitString;
+use super::{BitString, Oid};
 
 // TODO just use TlsError?
 #[deriving(Show, PartialEq)]
@@ -36,7 +36,7 @@ pub enum Element {
     BitStringElem(BitString), // 0x03; (number of unused bits, bytes)
     OctetString(Vec<u8>),
     Null, // 0x05
-    ObjectIdentifier(Vec<u64>), // 0x06
+    ObjectIdentifier(Oid), // 0x06
 
     Utf8String(String), // 0x0c
     PrintableString(Vec<Ascii>), // 0x13
@@ -227,7 +227,7 @@ impl<'a, R: Reader> DerReader<'a, R> {
                         i += 1;
                     }
 
-                    ObjectIdentifier(nums)
+                    ObjectIdentifier(Oid::new(nums))
                 }
 
                 0x0c => {
