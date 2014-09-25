@@ -7,6 +7,9 @@
 // more tests!
 // http://csrc.nist.gov/groups/ST/crypto_apps_infra/pki/pkitesting.html
 // check ff/chrome testsuite
+// "round trip" test? well..
+// should Certificate struct "preserve" all information?
+// is it important to preserve actual String type? PrintableString, UTF8String, ...
 
 use std::io::BufReader;
 
@@ -15,7 +18,7 @@ use super::der;
 use super::der::{Element, DerResult};
 use super::alg_id::AlgId;
 
-// Name is actually CHOICE, but there is only one possibility in RFC 5280:
+// Name is actually CHOICE, but there is only one possibility in X.501 / RFC 5280:
 // Name ::= CHOICE { rdnSequence  RDNSequence }
 // RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
 #[deriving(Show)]
@@ -23,18 +26,25 @@ pub struct Name {
     seq: Vec<RelativeDistinguishedName>,
 }
 
-// RelativeDistinguishedName ::= SET SIZE (1..MAX) OF AttributeTypeAndValue
 #[deriving(Show)]
 pub struct RelativeDistinguishedName {
-    // TODO 1..MAX
     set: Vec<AttributeTypeAndValue>,
 }
 
+// TODO this should be an enum?
 #[deriving(Show)]
 pub struct AttributeTypeAndValue {
-    attr_type: Vec<u8>, // oid
+    attr_type: Oid, // oid
     attr_value: Vec<u8>, // "ANY"
 }
+
+// pub enum DirectoryString {
+//     // Teletex(der::TeletexString),
+//     Printable(PrintableString),
+//     // Universal(UniversalString),
+//     Utf8(UTF8String),
+//     // Bmp(BMPString),
+// }
 
 impl Name {
     fn from_seq(children: &[Element]) -> DerResult<Name> {
@@ -42,7 +52,7 @@ impl Name {
         for elem in children.iter() {
             match elem {
                 &der::Set(ref elems) => {
-                    debug!("set elems: {}", elems);
+                    debug!("Name: set elems: {}", elems);
                     // TODO
                 }
                 _ => return Err(der::InvalidValue),
@@ -179,6 +189,16 @@ pub struct Extension {
 // -- corresponding to the extension type identified
 // -- by extnID
 }
+
+// impl FromElem for Extension {
+//     fn from_elem_opt(elem: &Element) -> DerResult<Option<Extension>> {
+//         match elem {
+//             &der::Sequence(ref children) => {
+//                 let mut iter = children.iter();
+//             }
+//         }
+//     }
+// }
 
 #[deriving(Show)]
 pub struct TbsCertificate {
@@ -356,6 +376,11 @@ impl Certificate {
             Some(elem) => try!(FromElem::from_elem(elem)),
             _ => return Err(der::InvalidValue),
         };
+
+        if sig_alg != tbs_cert.signature {
+            // TODO better error msg
+            return Err(der::InvalidValue);
+        }
 
         let sig_val: BitString = match iter.next() {
             Some(&der::BitStringElem(ref bitstring)) => {

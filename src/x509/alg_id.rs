@@ -26,8 +26,14 @@ impl FromElem for AlgId {
                     None => return Err(der::InvalidValue),
                 };
 
-                // TODO params
-                let _ = iter.next();
+                // TODO params?
+                match iter.next() {
+                    Some(&der::Null) => {}
+                    Some(val) => {
+                        debug!("unexpected AlgorithmIdentifier param: {}", val);
+                    }
+                    None => return Err(der::InvalidValue),
+                }
 
                 match iter.next() {
                     Some(..) => return Err(der::InvalidValue),
