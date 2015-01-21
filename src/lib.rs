@@ -43,5 +43,7 @@ pub mod client;
 
 #[macro_use]
 pub mod der;
+#[macro_use]
+pub mod x509;
 
 #[cfg(test)] mod test;
