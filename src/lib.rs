@@ -9,6 +9,8 @@
 #[macro_use]
 extern crate log;
 
+extern crate chrono;
+
 pub use tls::Tls;
 pub use client::TlsClient;
 
@@ -38,5 +40,8 @@ pub mod handshake;
 
 pub mod tls;
 pub mod client;
+
+#[macro_use]
+pub mod der;
 
 #[cfg(test)] mod test;

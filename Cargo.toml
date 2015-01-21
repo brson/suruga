@@ -7,3 +7,7 @@ authors = ["klutzytheklutzy@gmail.com"]
 [dependencies]
 
 log = "*"
+
+[dependencies.chrono]
+
+git = "https://github.com/lifthrasiir/rust-chrono"
