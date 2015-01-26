@@ -610,9 +610,9 @@ pub mod int256 {
             }
         }
 
-        impl ::std::fmt::Show for Int256 {
-            fn fmt(&self, a: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                self.v[].fmt(a)
+        impl ::std::fmt::Debug for Int256 {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+                self.v[].fmt(f)
             }
         }
 

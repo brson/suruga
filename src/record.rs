@@ -14,7 +14,7 @@ use self::Message::{HandshakeMessage, ChangeCipherSpecMessage, AlertMessage,
                     ApplicationDataMessage};
 
 #[repr(u8)]
-#[derive(Copy, PartialEq, FromPrimitive, Show)]
+#[derive(Copy, PartialEq, FromPrimitive, Debug)]
 pub enum ContentType {
     ChangeCipherSpecTy = 20,
     AlertTy = 21,
