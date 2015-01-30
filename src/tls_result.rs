@@ -1,6 +1,6 @@
 use std::error::{Error, FromError};
 use std::fmt;
-use std::io::IoError;
+use std::old_io::IoError;
 
 #[derive(Copy, PartialEq, Debug)]
 pub enum TlsErrorKind {

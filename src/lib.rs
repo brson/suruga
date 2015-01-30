@@ -4,7 +4,7 @@
 #![allow(missing_copy_implementations)]
 
 #![feature(slicing_syntax)]
-#![allow(unstable)]
+#![feature(core, collections, rand, io)]
 
 #[macro_use]
 extern crate log;
